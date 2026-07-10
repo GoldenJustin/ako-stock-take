@@ -1,0 +1,233 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-29 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "general_section",
+  "company",
+  "app_logo",
+  "column_break_logo",
+  "require_variance_reason",
+  "allow_negative_stock_count",
+  "auto_fetch_balance",
+  "enable_offline_sync",
+  "scanning_section",
+  "default_scan_mode",
+  "allow_manual_item_search",
+  "duplicate_scan_behavior",
+  "column_break_scan",
+  "lock_actual_balance",
+  "show_system_balance_on_device",
+  "posting_section",
+  "create_stock_reconciliation",
+  "default_expense_account",
+  "default_cost_center",
+  "column_break_post",
+  "auto_submit_reconciliation",
+  "mobile_section",
+  "mobile_app_title",
+  "support_email",
+  "support_phone",
+  "api_section",
+  "allowed_cors_origins"
+ ],
+ "fields": [
+  {
+   "fieldname": "general_section",
+   "fieldtype": "Section Break",
+   "label": "General"
+  },
+  {
+   "description": "Default company for stock take sessions",
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Default Company",
+   "options": "Company"
+  },
+  {
+   "description": "Logo shown on the mobile Stock Take app (falls back to Company logo)",
+   "fieldname": "app_logo",
+   "fieldtype": "Attach Image",
+   "label": "Mobile App Logo"
+  },
+  {
+   "fieldname": "column_break_logo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Force user to pick a reason when Physical Count - Actual Balance is not zero",
+   "fieldname": "require_variance_reason",
+   "fieldtype": "Check",
+   "label": "Mandatory Variance Reason"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_negative_stock_count",
+   "fieldtype": "Check",
+   "label": "Allow Negative Physical Count"
+  },
+  {
+   "default": "1",
+   "fieldname": "auto_fetch_balance",
+   "fieldtype": "Check",
+   "label": "Auto Fetch Actual Balance on Scan"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_offline_sync",
+   "fieldtype": "Check",
+   "label": "Enable Offline Queue Sync"
+  },
+  {
+   "fieldname": "scanning_section",
+   "fieldtype": "Section Break",
+   "label": "Scanning"
+  },
+  {
+   "default": "Barcode",
+   "fieldname": "default_scan_mode",
+   "fieldtype": "Select",
+   "label": "Default Scan Mode",
+   "options": "Barcode\nQR Code\nManual"
+  },
+  {
+   "default": "1",
+   "fieldname": "allow_manual_item_search",
+   "fieldtype": "Check",
+   "label": "Allow Manual Item Search"
+  },
+  {
+   "default": "Accumulate",
+   "description": "When the same barcode is scanned again in a session",
+   "fieldname": "duplicate_scan_behavior",
+   "fieldtype": "Select",
+   "label": "Duplicate Scan Behavior",
+   "options": "Accumulate\nReplace\nPrompt"
+  },
+  {
+   "fieldname": "column_break_scan",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Actual Balance is always read-only on the device",
+   "fieldname": "lock_actual_balance",
+   "fieldtype": "Check",
+   "label": "Lock Actual Balance (Read Only)"
+  },
+  {
+   "default": "1",
+   "fieldname": "show_system_balance_on_device",
+   "fieldtype": "Check",
+   "label": "Show System Balance on Device"
+  },
+  {
+   "fieldname": "posting_section",
+   "fieldtype": "Section Break",
+   "label": "Stock Posting"
+  },
+  {
+   "default": "0",
+   "description": "When a Stock Take Session is submitted, create ERPNext Stock Reconciliation",
+   "fieldname": "create_stock_reconciliation",
+   "fieldtype": "Check",
+   "label": "Create Stock Reconciliation on Submit"
+  },
+  {
+   "depends_on": "eval:doc.create_stock_reconciliation",
+   "fieldname": "default_expense_account",
+   "fieldtype": "Link",
+   "label": "Default Difference Account",
+   "options": "Account"
+  },
+  {
+   "depends_on": "eval:doc.create_stock_reconciliation",
+   "fieldname": "default_cost_center",
+   "fieldtype": "Link",
+   "label": "Default Cost Center",
+   "options": "Cost Center"
+  },
+  {
+   "fieldname": "column_break_post",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.create_stock_reconciliation",
+   "fieldname": "auto_submit_reconciliation",
+   "fieldtype": "Check",
+   "label": "Auto Submit Stock Reconciliation"
+  },
+  {
+   "fieldname": "mobile_section",
+   "fieldtype": "Section Break",
+   "label": "Mobile Branding"
+  },
+  {
+   "default": "AKO Stock Take",
+   "fieldname": "mobile_app_title",
+   "fieldtype": "Data",
+   "label": "Mobile App Title"
+  },
+  {
+   "fieldname": "support_email",
+   "fieldtype": "Data",
+   "label": "Support Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "support_phone",
+   "fieldtype": "Data",
+   "label": "Support Phone"
+  },
+  {
+   "fieldname": "api_section",
+   "fieldtype": "Section Break",
+   "label": "API"
+  },
+  {
+   "description": "Comma-separated origins allowed for CORS (mobile web builds)",
+   "fieldname": "allowed_cors_origins",
+   "fieldtype": "Small Text",
+   "label": "Allowed CORS Origins"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-29 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "AKO Stock Take",
+ "name": "Stock Take Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Stock Take Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Stock Take User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

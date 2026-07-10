@@ -1,0 +1,58 @@
+[
+  {
+    "doctype": "Stock Take Variance Reason",
+    "reason_code": "DAMAGED",
+    "reason_name": "Damaged Goods",
+    "is_active": 1,
+    "description": "Stock damaged beyond saleable condition"
+  },
+  {
+    "doctype": "Stock Take Variance Reason",
+    "reason_code": "THEFT",
+    "reason_name": "Theft / Shrinkage",
+    "is_active": 1,
+    "description": "Suspected theft or unexplained shrinkage"
+  },
+  {
+    "doctype": "Stock Take Variance Reason",
+    "reason_code": "EXPIRED",
+    "reason_name": "Expired Stock",
+    "is_active": 1,
+    "description": "Items past expiry removed from sellable stock"
+  },
+  {
+    "doctype": "Stock Take Variance Reason",
+    "reason_code": "MISCOUNT",
+    "reason_name": "Previous Miscount",
+    "is_active": 1,
+    "description": "Correction of a previous counting error"
+  },
+  {
+    "doctype": "Stock Take Variance Reason",
+    "reason_code": "UNRECORDED_ISSUE",
+    "reason_name": "Unrecorded Issue / Delivery",
+    "is_active": 1,
+    "description": "Stock issued/delivered without system entry"
+  },
+  {
+    "doctype": "Stock Take Variance Reason",
+    "reason_code": "UNRECORDED_RECEIPT",
+    "reason_name": "Unrecorded Receipt",
+    "is_active": 1,
+    "description": "Stock received without system entry"
+  },
+  {
+    "doctype": "Stock Take Variance Reason",
+    "reason_code": "TRANSFER",
+    "reason_name": "Pending Transfer",
+    "is_active": 1,
+    "description": "Stock in transit or pending warehouse transfer"
+  },
+  {
+    "doctype": "Stock Take Variance Reason",
+    "reason_code": "OTHER",
+    "reason_name": "Other (see notes)",
+    "is_active": 1,
+    "description": "Other reason – document in notes"
+  }
+]

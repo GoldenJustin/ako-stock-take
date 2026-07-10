@@ -1,0 +1,18 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+recursive-include ako_stock_take *.css
+recursive-include ako_stock_take *.csv
+recursive-include ako_stock_take *.html
+recursive-include ako_stock_take *.ico
+recursive-include ako_stock_take *.js
+recursive-include ako_stock_take *.json
+recursive-include ako_stock_take *.md
+recursive-include ako_stock_take *.png
+recursive-include ako_stock_take *.py
+recursive-include ako_stock_take *.svg
+recursive-include ako_stock_take *.txt
+recursive-exclude ako_stock_take *.pyc

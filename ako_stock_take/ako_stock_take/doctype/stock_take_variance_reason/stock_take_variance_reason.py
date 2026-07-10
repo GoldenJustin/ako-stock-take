@@ -1,0 +1,5 @@
+# Auto-generated compatibility shim
+"""Re-export from nested Frappe module path so old imports keep working."""
+from ako_stock_take.ako_stock_take.doctype.stock_take_variance_reason.stock_take_variance_reason import *  # noqa: F401,F403
+from ako_stock_take.ako_stock_take.doctype.stock_take_variance_reason.stock_take_variance_reason import StockTakeVarianceReason  # noqa: F401
+__all__ = ['StockTakeVarianceReason']

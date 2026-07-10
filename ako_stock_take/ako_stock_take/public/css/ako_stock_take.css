@@ -1,0 +1,25 @@
+/* AKO Stock Take desk styles */
+.ako-stock-take-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ako-variance-positive {
+  color: #0f766e;
+  background: #ccfbf1;
+}
+
+.ako-variance-negative {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.ako-variance-zero {
+  color: #334155;
+  background: #e2e8f0;
+}
