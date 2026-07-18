@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "AKO Stock Take",
+    "slug": "ako-stock-take",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "akostocktake",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B3D91"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "tz.co.kodatechnologies.akostocktake",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Camera is used to scan item barcodes during stock take.",
+        "NSPhotoLibraryUsageDescription": "Access photos if you attach evidence for variance."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundColor": "#0B3D91"
+      },
+      "package": "tz.co.kodatechnologies.akostocktake",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow AKO Stock Take to use the camera for barcode scanning."
+        }
+      ],
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "erpnextUrl": "https://erpnext.kodatechnologies.co.tz"
+    },
+    "owner": "goldenjustin",
+    "description": "Barcode stock take for ERPNext \u2014 Koda Technologies",
+    "githubUrl": "https://github.com/GoldenJustin/ako-stock-take"
+  }
+}
