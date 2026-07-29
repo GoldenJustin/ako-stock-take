@@ -111,15 +111,26 @@ function extractSidFromResponse(response: Response): string {
  * POST /api/method/login  { usr, pwd }
  * Read sid from Set-Cookie, persist to AsyncStorage (erp_sid).
  */
-export const loginToERP = async (
-  email: string,
-  password: string,
-  serverUrl?: string
-): Promise<LoginResult> => {
-  const baseUrl = serverUrl ? await setBaseUrl(serverUrl) : await getBaseUrl();
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
-  console.log(`[AUTH]: Attempting login to ${baseUrl} for ${email}`);
+function isTransientGateway(status: number, body: string, errMsg?: string) {
+  const low = `${body || ''} ${errMsg || ''}`.toLowerCase();
+  return (
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    low.includes('gateway timeout') ||
+    low.includes('bad gateway') ||
+    low.includes('service unavailable') ||
+    low.includes('timed out') ||
+    low.includes('timeout')
+  );
+}
 
+/** Single login attempt */
+async function loginOnce(baseUrl: string, email: string, password: string): Promise<LoginResult & { retryable?: boolean }> {
   try {
     const response = await fetch(`${baseUrl}/api/method/login`, {
       method: 'POST',
@@ -132,23 +143,24 @@ export const loginToERP = async (
     });
 
     const text = await response.text();
-    console.log(`[AUTH]: HTTP ${response.status} bodyPreview=${text.slice(0, 80).replace(/\n/g, ' ')}`);
+    console.log(
+      `[AUTH]: HTTP ${response.status} bodyPreview=${text.slice(0, 80).replace(/\n/g, ' ')}`
+    );
 
     let data: any = {};
     try {
       data = text ? JSON.parse(text) : {};
     } catch {
+      const err = summarizeBody(text, response.status);
       return {
         success: false,
-        error: summarizeBody(text, response.status),
+        error: err,
+        retryable: isTransientGateway(response.status, text, err),
       };
     }
 
     if (response.ok && data.message === 'Logged In') {
-      let sid = extractSidFromResponse(response);
-
-      // Fallback: some proxies strip Set-Cookie from JS; call logged_user won't work without sid.
-      // Keep empty sid like SFA — but warn.
+      const sid = extractSidFromResponse(response);
       await AsyncStorage.setItem(ERP_SID_KEY, sid);
       await AsyncStorage.setItem(ERP_USER_KEY, data.full_name || email);
       await AsyncStorage.setItem(ERP_URL_KEY, baseUrl);
@@ -160,13 +172,19 @@ export const loginToERP = async (
       } catch {
         /* optional */
       }
-
       if (!sid) {
-        console.log('[AUTH]: Logged In but sid cookie not exposed to JS — API calls may fail on native.');
+        console.log('[AUTH]: Logged In but sid cookie not visible to JS');
       } else {
-        console.log(`[AUTH]: Login successful. Session SID initialized.`);
+        console.log('[AUTH]: Login successful');
       }
       return { success: true, user: data.full_name || email };
+    }
+
+    // Wrong password etc. — do not retry
+    if (response.status === 401 || response.status === 403) {
+      const errMsg =
+        extractFrappeError(data) || data.message || 'Invalid Credentials';
+      return { success: false, error: String(errMsg), retryable: false };
     }
 
     const errMsg =
@@ -174,33 +192,71 @@ export const loginToERP = async (
       data.message ||
       summarizeBody(text, response.status) ||
       'Invalid Credentials';
-    console.log(`[AUTH]: Credentials rejected by server: ${errMsg}`);
-    return { success: false, error: String(errMsg) };
+    return {
+      success: false,
+      error: String(errMsg),
+      retryable: isTransientGateway(response.status, text, String(errMsg)),
+    };
   } catch (error: any) {
     const msg = String(error?.message || error || '');
-    console.log(`[AUTH]: Network error during authentication: ${msg}`);
+    console.log(`[AUTH]: Network error: ${msg}`);
     if (msg.toLowerCase().includes('abort')) {
       return {
         success: false,
-        error: 'Login timed out. Server is slow or unreachable — check ERPNext and try again.',
+        error: 'Login timed out. Server is slow — retrying…',
+        retryable: true,
       };
     }
     if (msg.toLowerCase().includes('network request failed')) {
       return {
         success: false,
-        error: 'Cannot reach server. Check internet / ERPNext URL / TLS.',
+        error: 'Cannot reach server. Check internet / ERPNext URL.',
+        retryable: true,
       };
     }
-    // JSON parse errors from older code paths
-    if (msg.toLowerCase().includes('json parse')) {
-      return {
-        success: false,
-        error:
-          'Server returned a non-JSON response (often Gateway Timeout). Wait and retry, or restart backend.',
-      };
-    }
-    return { success: false, error: msg || 'Cannot reach server.' };
+    return {
+      success: false,
+      error: msg || 'Cannot reach server.',
+      retryable: true,
+    };
   }
+}
+
+/**
+ * POST /api/method/login  { usr, pwd }
+ * Retries a few times on gateway 502/503/504 (common right after docker restart).
+ */
+export const loginToERP = async (
+  email: string,
+  password: string,
+  serverUrl?: string
+): Promise<LoginResult> => {
+  const baseUrl = serverUrl ? await setBaseUrl(serverUrl) : await getBaseUrl();
+  console.log(`[AUTH]: Login → ${baseUrl} as ${email}`);
+
+  const maxAttempts = 4;
+  let last: LoginResult & { retryable?: boolean } = {
+    success: false,
+    error: 'Login failed',
+  };
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1) {
+      const wait = attempt * 1500;
+      console.log(`[AUTH]: Retry ${attempt}/${maxAttempts} in ${wait}ms…`);
+      await sleep(wait);
+    }
+    last = await loginOnce(baseUrl, email, password);
+    if (last.success) return last;
+    if (!last.retryable) return last;
+  }
+
+  return {
+    success: false,
+    error:
+      last.error ||
+      'Server gateway timeout. ERPNext may be restarting — wait 30s and try again.',
+  };
 };
 
 export const logoutFromERP = async () => {

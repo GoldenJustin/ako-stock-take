@@ -1,14 +1,22 @@
 /**
- * Map technical ERPNext / network errors to short UI copy.
- * Full details always go to Metro / device logs via console.error.
+ * Friendly UI errors; details go to Metro logs.
  */
 
 export function logTechnicalError(scope: string, err: unknown) {
   const raw = normalizeRaw(err);
-  console.error(`[${scope}]`, raw);
-  if (err && typeof err === 'object') {
-    console.error(`[${scope}] object:`, JSON.stringify(err, null, 2).slice(0, 2000));
+  const low = raw.toLowerCase();
+  // Don't dump scary red stacks for expected gateway blips during demos
+  if (
+    low.includes('504') ||
+    low.includes('502') ||
+    low.includes('gateway') ||
+    low.includes('timed out') ||
+    low.includes('timeout')
+  ) {
+    console.log(`[${scope}] ${raw}`);
+    return;
   }
+  console.log(`[${scope}] ${raw}`);
 }
 
 function normalizeRaw(err: unknown): string {
@@ -16,6 +24,7 @@ function normalizeRaw(err: unknown): string {
   if (typeof err === 'string') return err;
   if (err instanceof Error) return err.message || String(err);
   if (typeof err === 'object' && (err as any).message) return String((err as any).message);
+  if (typeof err === 'object' && (err as any).technical) return String((err as any).technical);
   try {
     return JSON.stringify(err);
   } catch {
@@ -28,7 +37,6 @@ export function toUserMessage(err: unknown, fallback = 'Something went wrong. Tr
   const raw = normalizeRaw(err);
   const low = raw.toLowerCase();
 
-  // Credentials
   if (
     low.includes('invalid login') ||
     low.includes('authenticationerror') ||
@@ -37,58 +45,47 @@ export function toUserMessage(err: unknown, fallback = 'Something went wrong. Tr
     return 'Wrong email or password.';
   }
 
-  // Not logged in / guest
   if (
     low.includes('not permitted') ||
     low.includes('login to access') ||
     low.includes('not whitelisted') ||
     low.includes('authentication required')
   ) {
-    return 'Session expired or API not ready. Update server app and try again.';
+    return 'Session expired. Please sign in again.';
   }
 
-  // Module / install issues
   if (
     low.includes('modulenotfounderror') ||
     low.includes('no module named') ||
-    low.includes('ako_stock_take.doctype') ||
-    low.includes('ako_stock_take.do')
+    low.includes('ako_stock_take.doctype')
   ) {
-    return 'Server app needs update. Run update-erpnext-app.sh on the server.';
+    return 'Server app needs an update. Contact admin.';
   }
 
-  // HTTP / gateway
   if (low.includes('504') || low.includes('gateway timeout')) {
-    return 'Server timed out. Wait a minute and retry.';
+    return 'Server is waking up (timeout). Wait ~20s and try again.';
   }
   if (low.includes('502') || low.includes('bad gateway')) {
-    return 'Server gateway error. Restart backend container.';
+    return 'Server is restarting. Try again in a moment.';
   }
   if (low.includes('503')) {
     return 'Server busy. Try again shortly.';
   }
   if (low.includes('timeout') || low.includes('timed out') || low.includes('aborted')) {
-    return 'Request timed out. Check connection and retry.';
+    return 'Request timed out. Try again.';
   }
   if (low.includes('network request failed') || low.includes('cannot reach')) {
-    return 'Cannot reach ERPNext. Check internet and server URL.';
+    return 'No connection to ERPNext. Check internet.';
   }
   if (low.includes('json parse') || low.includes('unexpected character')) {
-    return 'Server returned an invalid response. Retry or check ERPNext.';
+    return 'Bad response from server. Retry.';
   }
-
-  // Permission / roles
   if (low.includes('permission') || low.includes('not allowed')) {
-    return 'No permission. Ask admin for Stock Take roles.';
+    return 'No permission for stock take. Ask admin for roles.';
   }
 
-  // Keep short — strip traceback noise
   const firstLine = raw.split('\n')[0].replace(/<[^>]+>/g, '').trim();
-  if (firstLine.length > 120) {
-    return fallback;
-  }
-  // Avoid showing Python class names on screen
-  if (/Error:|Traceback|File \"|exc_type/i.test(firstLine)) {
+  if (firstLine.length > 110 || /Error:|Traceback|exc_type/i.test(firstLine)) {
     return fallback;
   }
   return firstLine || fallback;

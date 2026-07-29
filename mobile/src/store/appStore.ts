@@ -146,16 +146,27 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const url = await getBaseUrl();
 
-      // Bootstrap can fail while login succeeded — keep message clean for UI
-      let boot: BootstrapData;
-      try {
-        boot = await erpApi.getBootstrap();
-      } catch (bootErr: any) {
-        logTechnicalError('BOOTSTRAP', bootErr);
+      // Bootstrap after login — retry a couple times if gateway is still up
+      let boot: BootstrapData | null = null;
+      let bootErr: any = null;
+      for (let i = 1; i <= 3; i++) {
+        try {
+          boot = await erpApi.getBootstrap();
+          bootErr = null;
+          break;
+        } catch (e: any) {
+          bootErr = e;
+          logTechnicalError('BOOTSTRAP', e);
+          if (i < 3) {
+            await new Promise((r) => setTimeout(r, i * 1500));
+          }
+        }
+      }
+      if (!boot) {
         throw new UserFacingError(
           toUserMessage(
             bootErr,
-            'Logged in, but app data failed to load. Update server app and retry.'
+            'Logged in, but app data failed to load. Wait and try again.'
           ),
           bootErr?.message || String(bootErr)
         );
