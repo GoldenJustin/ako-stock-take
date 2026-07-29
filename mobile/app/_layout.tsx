@@ -4,29 +4,37 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
-import { PaperProvider, MD3LightTheme } from 'react-native-paper';
+import { PaperProvider, MD3DarkTheme, MD3LightTheme } from 'react-native-paper';
 import { useAppStore } from '@/store/appStore';
-import { colors } from '@/theme/colors';
+import { usePrefsStore } from '@/store/prefsStore';
+import { ThemeProvider, useTheme } from '@/theme/ThemeContext';
 import { LoadingBlock, Screen } from '@/components/ui';
 
-const theme = {
-  ...MD3LightTheme,
-  colors: {
-    ...MD3LightTheme.colors,
-    primary: colors.primary,
-    secondary: colors.secondary,
-  },
-};
-
-export default function RootLayout() {
+function RootNav() {
   const hydrate = useAppStore((s) => s.hydrate);
   const hydrated = useAppStore((s) => s.hydrated);
+  const hydratePrefs = usePrefsStore((s) => s.hydratePrefs);
+  const prefsHydrated = usePrefsStore((s) => s.hydrated);
+  const { colors } = useTheme();
 
   useEffect(() => {
     hydrate();
-  }, [hydrate]);
+    hydratePrefs();
+  }, [hydrate, hydratePrefs]);
 
-  if (!hydrated) {
+  const paperTheme = {
+    ...(colors.isDark ? MD3DarkTheme : MD3LightTheme),
+    colors: {
+      ...(colors.isDark ? MD3DarkTheme.colors : MD3LightTheme.colors),
+      primary: colors.primary,
+      secondary: colors.secondary,
+      background: colors.background,
+      surface: colors.surface,
+      onSurface: colors.text,
+    },
+  };
+
+  if (!hydrated || !prefsHydrated) {
     return (
       <Screen>
         <LoadingBlock label="Starting AKO Stock Take…" />
@@ -35,17 +43,25 @@ export default function RootLayout() {
   }
 
   return (
+    <PaperProvider theme={paperTheme}>
+      <StatusBar style={colors.isDark ? 'light' : 'light'} />
+      <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(app)" />
+      </Stack>
+      <Toast />
+    </PaperProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <PaperProvider theme={theme}>
-          <StatusBar style="light" />
-          <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(app)" />
-          </Stack>
-          <Toast />
-        </PaperProvider>
+        <ThemeProvider>
+          <RootNav />
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Platform,
   StyleSheet,
@@ -9,7 +9,7 @@ import {
   Vibration,
 } from 'react-native';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -17,25 +17,46 @@ import Toast from 'react-native-toast-message';
 import { Button, Muted } from '@/components/ui';
 import { erpApi } from '@/api/client';
 import { useAppStore } from '@/store/appStore';
-import { colors, radius, spacing } from '@/theme/colors';
+import { useTheme } from '@/theme/ThemeContext';
+import { radius, spacing } from '@/theme/colors';
+import { toUserMessage } from '@/utils/errors';
 
 export default function ScanScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const sessionName = decodeURIComponent(id || '');
   const activeSession = useAppStore((s) => s.activeSession);
   const warehouse = activeSession?.warehouse;
+  const { colors } = useTheme();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   const [manual, setManual] = useState('');
   const [locked, setLocked] = useState(false);
   const [showManual, setShowManual] = useState(false);
+  const [cameraKey, setCameraKey] = useState(0);
   const lastScan = useRef<string>('');
   const lastAt = useRef<number>(0);
+  const busyRef = useRef(false);
+
+  // Reset scanner every time this screen is focused (2nd/3rd scan was stuck locked)
+  useFocusEffect(
+    useCallback(() => {
+      busyRef.current = false;
+      setLocked(false);
+      lastScan.current = '';
+      lastAt.current = 0;
+      setManual('');
+      // remount camera so barcode listener is fresh after navigation
+      setCameraKey((k) => k + 1);
+      return () => {
+        busyRef.current = true;
+        setLocked(true);
+      };
+    }, [])
+  );
 
   useEffect(() => {
     if (!warehouse) {
-      // load session if needed
       erpApi
         .getSession(sessionName)
         .then((s) => useAppStore.getState().setActiveSession(s))
@@ -45,11 +66,15 @@ export default function ScanScreen() {
 
   const handleBarcode = async (data: string) => {
     const code = (data || '').trim();
-    if (!code || locked) return;
+    if (!code || busyRef.current || locked) return;
+
     const now = Date.now();
-    if (code === lastScan.current && now - lastAt.current < 2500) return;
+    // Only debounce identical codes briefly — different items must always pass
+    if (code === lastScan.current && now - lastAt.current < 1800) return;
+
     lastScan.current = code;
     lastAt.current = now;
+    busyRef.current = true;
     setLocked(true);
 
     try {
@@ -64,13 +89,15 @@ export default function ScanScreen() {
     const wh = warehouse || useAppStore.getState().activeSession?.warehouse;
     if (!wh) {
       Toast.show({ type: 'error', text1: 'Warehouse missing on session' });
+      busyRef.current = false;
       setLocked(false);
       return;
     }
 
     try {
       const result = await erpApi.scanBarcode(code, wh, sessionName);
-      router.replace({
+      // push (not replace) so back returns to session list cleanly
+      router.push({
         pathname: `/(app)/session/${encodeURIComponent(sessionName)}/count`,
         params: {
           item_code: result.item_code,
@@ -84,11 +111,21 @@ export default function ScanScreen() {
             : '',
           reason: result.existing_line?.reason_for_variance || '',
           image: result.image || '',
+          ts: String(Date.now()), // bust param cache between scans
         },
       });
+      // unlock will happen on next focus; keep locked while navigating
     } catch (e: any) {
-      Toast.show({ type: 'error', text1: 'Scan failed', text2: e?.message });
-      setTimeout(() => setLocked(false), 1200);
+      Toast.show({
+        type: 'error',
+        text1: 'Scan failed',
+        text2: toUserMessage(e, e?.message || 'Try again'),
+      });
+      setTimeout(() => {
+        busyRef.current = false;
+        setLocked(false);
+        lastScan.current = '';
+      }, 900);
     }
   };
 
@@ -98,7 +135,7 @@ export default function ScanScreen() {
 
   if (!permission) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
         <Muted>Requesting camera permission…</Muted>
       </View>
     );
@@ -106,9 +143,9 @@ export default function ScanScreen() {
 
   if (!permission.granted) {
     return (
-      <SafeAreaView style={styles.center}>
+      <SafeAreaView style={[styles.center, { backgroundColor: colors.background }]}>
         <Ionicons name="camera-outline" size={48} color={colors.textMuted} />
-        <Text style={styles.permTitle}>Camera permission needed</Text>
+        <Text style={[styles.permTitle, { color: colors.text }]}>Camera permission needed</Text>
         <Muted style={{ textAlign: 'center', marginVertical: 12 }}>
           Allow camera access to scan item barcodes on the rack.
         </Muted>
@@ -127,6 +164,7 @@ export default function ScanScreen() {
   return (
     <View style={styles.container}>
       <CameraView
+        key={`cam-${cameraKey}`}
         style={StyleSheet.absoluteFill}
         facing="back"
         enableTorch={torch}
@@ -144,17 +182,20 @@ export default function ScanScreen() {
             'itf14',
           ],
         }}
-        onBarcodeScanned={locked ? undefined : onBarcodeScanned}
+        onBarcodeScanned={locked || busyRef.current ? undefined : onBarcodeScanned}
       />
 
       <SafeAreaView style={styles.overlay} edges={['top', 'bottom']}>
         <View style={styles.topBar}>
-          <Pressable onPress={() => router.back()} style={styles.roundBtn}>
-            <Ionicons name="close" size={22} color={colors.white} />
+          <Pressable
+            onPress={() => router.replace(`/(app)/session/${encodeURIComponent(sessionName)}`)}
+            style={styles.roundBtn}
+          >
+            <Ionicons name="close" size={22} color="#fff" />
           </Pressable>
-          <Text style={styles.topTitle}>3. Scan Item (Barcode)</Text>
+          <Text style={styles.topTitle}>Scan barcode</Text>
           <Pressable onPress={() => setTorch((v) => !v)} style={styles.roundBtn}>
-            <Ionicons name={torch ? 'flash' : 'flash-outline'} size={22} color={colors.white} />
+            <Ionicons name={torch ? 'flash' : 'flash-outline'} size={22} color="#fff" />
           </Pressable>
         </View>
 
@@ -164,10 +205,10 @@ export default function ScanScreen() {
             <View style={[styles.corner, styles.tr]} />
             <View style={[styles.corner, styles.bl]} />
             <View style={[styles.corner, styles.br]} />
-            <View style={styles.scanLine} />
+            <View style={[styles.scanLine, { backgroundColor: colors.barcodeLine }]} />
           </View>
           <Text style={styles.hint}>
-            Align barcode inside the frame. System will identify the item and pull Actual Balance.
+            Point at the barcode. After you save a count, come back here for the next item.
           </Text>
         </View>
 
@@ -180,9 +221,9 @@ export default function ScanScreen() {
             style={styles.manualToggle}
           />
           {showManual ? (
-            <View style={styles.manualBox}>
+            <View style={[styles.manualBox, { backgroundColor: colors.surface }]}>
               <TextInput
-                style={styles.manualInput}
+                style={[styles.manualInput, { color: colors.text }]}
                 placeholder="Enter barcode"
                 placeholderTextColor={colors.textMuted}
                 value={manual}
@@ -208,9 +249,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.lg,
-    backgroundColor: colors.background,
   },
-  permTitle: { fontSize: 18, fontWeight: '800', color: colors.text, marginTop: 12 },
+  permTitle: { fontSize: 18, fontWeight: '800', marginTop: 12 },
   overlay: { flex: 1, justifyContent: 'space-between' },
   topBar: {
     flexDirection: 'row',
@@ -227,18 +267,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topTitle: { color: colors.white, fontWeight: '800', fontSize: 16 },
+  topTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
   frameWrap: { alignItems: 'center' },
-  frame: {
-    width: 280,
-    height: 180,
-    position: 'relative',
-  },
+  frame: { width: 280, height: 180, position: 'relative' },
   corner: {
     position: 'absolute',
     width: CORNER,
     height: CORNER,
-    borderColor: colors.white,
+    borderColor: '#fff',
   },
   tl: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4 },
   tr: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4 },
@@ -250,7 +286,6 @@ const styles = StyleSheet.create({
     right: 10,
     top: '50%',
     height: 2,
-    backgroundColor: colors.barcodeLine,
   },
   hint: {
     color: 'rgba(255,255,255,0.9)',
@@ -262,27 +297,19 @@ const styles = StyleSheet.create({
   bottom: { padding: spacing.md, gap: 10 },
   lockedText: {
     textAlign: 'center',
-    color: colors.white,
+    color: '#fff',
     fontWeight: '700',
     backgroundColor: 'rgba(0,0,0,0.45)',
     padding: 8,
     borderRadius: radius.md,
     overflow: 'hidden',
   },
-  manualToggle: {
-    borderColor: 'rgba(255,255,255,0.7)',
-  },
+  manualToggle: { borderColor: 'rgba(255,255,255,0.7)' },
   manualBox: {
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: 8,
   },
-  manualInput: {
-    flex: 1,
-    paddingHorizontal: 10,
-    color: colors.text,
-    fontSize: 16,
-  },
+  manualInput: { flex: 1, paddingHorizontal: 10, fontSize: 16 },
 });

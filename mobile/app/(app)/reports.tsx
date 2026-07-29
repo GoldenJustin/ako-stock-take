@@ -63,10 +63,9 @@ export default function ReportsScreen() {
       contentContainerStyle={{ padding: spacing.md, paddingBottom: 40 }}
     >
       <Card>
-        <Title style={{ fontSize: 18 }}>8. Export & Reporting</Title>
+        <Title style={{ fontSize: 18 }}>Reports & export</Title>
         <Muted style={{ marginTop: 4 }}>
-          Stock Take Summary, Variance Report and Exception Report are available in ERPNext.
-          Export session data to Excel/CSV from here.
+          Load a session summary or open the matching report in ERPNext.
         </Muted>
       </Card>
 
@@ -126,21 +125,7 @@ export default function ReportsScreen() {
         </Pressable>
       ))}
 
-      <Card style={{ marginTop: spacing.md }}>
-        <Text style={styles.h}>Key advantages</Text>
-        {[
-          'Faster stock taking – scan items directly',
-          'Improved accuracy – barcode ensures right item',
-          'Automatic variance calculation',
-          'Mandatory reason ensures accountability',
-          'Easy reporting – export & auto-generate',
-        ].map((t) => (
-          <View key={t} style={styles.advRow}>
-            <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-            <Text style={styles.advText}>{t}</Text>
-          </View>
-        ))}
-      </Card>
+      
     </ScrollView>
   );
 }

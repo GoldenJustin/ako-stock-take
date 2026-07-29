@@ -16,8 +16,11 @@ import Toast from 'react-native-toast-message';
 import { Button, Card, Input, Muted, Title } from '@/components/ui';
 import { erpApi } from '@/api/client';
 import { useAppStore } from '@/store/appStore';
-import { colors, radius, spacing } from '@/theme/colors';
+import { resolveShowSystemBalance, usePrefsStore } from '@/store/prefsStore';
+import { useTheme } from '@/theme/ThemeContext';
+import { radius, spacing } from '@/theme/colors';
 import { calcVariance, formatQty, varianceColor } from '@/utils/format';
+import { toUserMessage } from '@/utils/errors';
 
 export default function CaptureCountScreen() {
   const params = useLocalSearchParams<{
@@ -34,6 +37,7 @@ export default function CaptureCountScreen() {
     line_name?: string;
     physical_qty?: string;
     image?: string;
+    ts?: string;
   }>();
 
   const sessionName = decodeURIComponent(params.id || '');
@@ -42,8 +46,13 @@ export default function CaptureCountScreen() {
   const activeSession = useAppStore((s) => s.activeSession);
   const updateActiveSession = useAppStore((s) => s.updateActiveSession);
   const enqueueOffline = useAppStore((s) => s.enqueueOffline);
+  const showSystemBalancePref = usePrefsStore((s) => s.showSystemBalance);
+  const { colors } = useTheme();
 
   const isSearchMode = params.mode === 'search' && !params.item_code;
+
+  // Key forces full form reset when a new scan arrives (fixes 2nd item sticking on 1st)
+  const formKey = `${params.item_code || ''}|${params.barcode || ''}|${params.ts || ''}|${params.line_name || ''}`;
 
   const [itemCode, setItemCode] = useState(params.item_code || '');
   const [itemName, setItemName] = useState(params.item_name || '');
@@ -52,9 +61,7 @@ export default function CaptureCountScreen() {
   const [rate, setRate] = useState(Number(params.valuation_rate || 0));
   const [uom, setUom] = useState(params.uom || '');
   const [image, setImage] = useState(params.image || '');
-  const [qty, setQty] = useState(
-    params.physical_qty || params.existing_qty || ''
-  );
+  const [qty, setQty] = useState(params.physical_qty || params.existing_qty || '');
   const [reason, setReason] = useState(params.reason || '');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -62,9 +69,28 @@ export default function CaptureCountScreen() {
   const [results, setResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
 
+  // Re-hydrate form whenever scan params change
+  useEffect(() => {
+    setItemCode(params.item_code || '');
+    setItemName(params.item_name || '');
+    setBarcode(params.barcode || '');
+    setActual(Number(params.actual_balance || 0));
+    setRate(Number(params.valuation_rate || 0));
+    setUom(params.uom || '');
+    setImage(params.image || '');
+    setQty(params.physical_qty || params.existing_qty || '');
+    setReason(params.reason || '');
+    setNotes('');
+  }, [formKey]);
+
   const variance = useMemo(() => calcVariance(Number(qty || 0), actual), [qty, actual]);
   const requireReason = !!settings?.require_variance_reason;
-  const showBalance = settings?.show_system_balance_on_device !== 0;
+  const showBalance = resolveShowSystemBalance(
+    settings?.show_system_balance_on_device,
+    showSystemBalancePref
+  );
+  // Blind count: hide variance numbers too when balance is hidden (prevents reverse-engineering)
+  const showVariance = showBalance;
   const reasonNeeded = requireReason && variance !== 0;
 
   useEffect(() => {
@@ -92,12 +118,17 @@ export default function CaptureCountScreen() {
       setRate(Number(scanned.valuation_rate || 0));
       setUom(scanned.uom || scanned.stock_uom || '');
       setImage(scanned.image || '');
-      if (scanned.existing_line) {
-        setQty(String(scanned.existing_line.physical_qty ?? ''));
-        setReason(scanned.existing_line.reason_for_variance || '');
-      }
+      setQty(
+        scanned.existing_line ? String(scanned.existing_line.physical_qty ?? '') : ''
+      );
+      setReason(scanned.existing_line?.reason_for_variance || '');
+      setNotes('');
     } catch (e: any) {
-      Toast.show({ type: 'error', text1: 'Item lookup failed', text2: e?.message });
+      Toast.show({
+        type: 'error',
+        text1: 'Item lookup failed',
+        text2: toUserMessage(e, e?.message),
+      });
     }
   };
 
@@ -112,29 +143,29 @@ export default function CaptureCountScreen() {
       const rows = await erpApi.searchItems(text.trim(), activeSession?.warehouse, 25);
       setResults(rows || []);
     } catch (e: any) {
-      Toast.show({ type: 'error', text1: 'Search failed', text2: e?.message });
+      Toast.show({ type: 'error', text1: 'Search failed', text2: toUserMessage(e) });
     } finally {
       setSearching(false);
     }
   };
 
-  const save = async () => {
+  const save = async (then: 'session' | 'scan' = 'session') => {
     if (!itemCode) {
       Toast.show({ type: 'error', text1: 'No item selected' });
-      return;
+      return false;
     }
     if (qty === '' || qty === null || qty === undefined) {
       Toast.show({ type: 'error', text1: 'Enter physical quantity' });
-      return;
+      return false;
     }
     const physical = Number(qty);
     if (Number.isNaN(physical)) {
       Toast.show({ type: 'error', text1: 'Invalid quantity' });
-      return;
+      return false;
     }
     if (!settings?.allow_negative_stock_count && physical < 0) {
       Toast.show({ type: 'error', text1: 'Negative count not allowed' });
-      return;
+      return false;
     }
     if (reasonNeeded && !reason) {
       Toast.show({
@@ -142,7 +173,7 @@ export default function CaptureCountScreen() {
         text1: 'Reason required',
         text2: 'Variance is not zero — select a reason',
       });
-      return;
+      return false;
     }
 
     setSaving(true);
@@ -160,12 +191,16 @@ export default function CaptureCountScreen() {
       Toast.show({
         type: 'success',
         text1: 'Count saved',
-        text2: `${itemCode} · var ${formatQty(variance)}`,
+        text2: itemCode,
       });
-      router.replace(`/(app)/session/${encodeURIComponent(sessionName)}`);
+      if (then === 'scan') {
+        router.replace(`/(app)/session/${encodeURIComponent(sessionName)}/scan`);
+      } else {
+        router.replace(`/(app)/session/${encodeURIComponent(sessionName)}`);
+      }
+      return true;
     } catch (e: any) {
-      // Offline queue fallback
-      if (settings?.enable_offline_sync) {
+      if (settings?.enable_offline_sync !== 0) {
         await enqueueOffline({
           id: `${Date.now()}-${itemCode}`,
           session_name: sessionName,
@@ -180,12 +215,17 @@ export default function CaptureCountScreen() {
         Toast.show({
           type: 'info',
           text1: 'Saved offline',
-          text2: e?.message || 'Will sync later',
+          text2: 'Will sync when you are back online',
         });
-        router.replace(`/(app)/session/${encodeURIComponent(sessionName)}`);
-      } else {
-        Toast.show({ type: 'error', text1: 'Save failed', text2: e?.message });
+        if (then === 'scan') {
+          router.replace(`/(app)/session/${encodeURIComponent(sessionName)}/scan`);
+        } else {
+          router.replace(`/(app)/session/${encodeURIComponent(sessionName)}`);
+        }
+        return true;
       }
+      Toast.show({ type: 'error', text1: 'Save failed', text2: toUserMessage(e) });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -193,10 +233,10 @@ export default function CaptureCountScreen() {
 
   if (isSearchMode && !itemCode) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <Card style={{ margin: spacing.md }}>
           <Title style={{ fontSize: 18 }}>Search Item</Title>
-          <Muted>Manual search when barcode cannot be scanned.</Muted>
+          <Muted>Use when the barcode cannot be scanned.</Muted>
           <Input
             label="Item code / name / barcode"
             value={query}
@@ -217,9 +257,9 @@ export default function CaptureCountScreen() {
           renderItem={({ item }) => (
             <Pressable onPress={() => pickItem(item)}>
               <Card style={{ marginBottom: spacing.sm }}>
-                <Text style={styles.itemCode}>{item.item_code}</Text>
+                <Text style={[styles.itemCode, { color: colors.text }]}>{item.item_code}</Text>
                 <Muted>{item.item_name}</Muted>
-                {item.actual_balance != null ? (
+                {showBalance && item.actual_balance != null ? (
                   <Muted>Balance: {formatQty(item.actual_balance)}</Muted>
                 ) : null}
               </Card>
@@ -232,8 +272,9 @@ export default function CaptureCountScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      key={formKey}
     >
       <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 40 }}>
         <Card>
@@ -241,13 +282,13 @@ export default function CaptureCountScreen() {
             {image ? (
               <Image source={{ uri: image }} style={styles.image} />
             ) : (
-              <View style={styles.imagePh}>
+              <View style={[styles.imagePh, { backgroundColor: colors.infoBg }]}>
                 <Ionicons name="cube-outline" size={28} color={colors.primary} />
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <Text style={styles.itemCode}>{itemCode}</Text>
-              <Text style={styles.itemName}>{itemName}</Text>
+              <Text style={[styles.itemCode, { color: colors.text }]}>{itemCode}</Text>
+              <Text style={[styles.itemName, { color: colors.text }]}>{itemName}</Text>
               {barcode ? <Muted>Barcode: {barcode}</Muted> : null}
               {uom ? <Muted>UOM: {uom}</Muted> : null}
             </View>
@@ -255,26 +296,39 @@ export default function CaptureCountScreen() {
         </Card>
 
         <Card style={{ marginTop: spacing.md }}>
-          <Title style={{ fontSize: 16, marginBottom: spacing.sm }}>
-            5. Capture Physical Count
-          </Title>
+          <Title style={{ fontSize: 16, marginBottom: spacing.sm }}>Physical count</Title>
 
           {showBalance ? (
-            <View style={styles.balanceBox}>
+            <View
+              style={[
+                styles.balanceBox,
+                { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+              ]}
+            >
               <View style={{ flex: 1 }}>
-                <Muted>Actual Balance (System)</Muted>
-                <Text style={styles.balanceValue}>{formatQty(actual)}</Text>
+                <Muted>System balance (book)</Muted>
+                <Text style={[styles.balanceValue, { color: colors.text }]}>
+                  {formatQty(actual)}
+                </Text>
               </View>
               <Ionicons name="lock-closed" size={18} color={colors.lock} />
             </View>
           ) : (
-            <Muted style={{ marginBottom: spacing.sm }}>
-              System balance is hidden by settings (still used for variance).
-            </Muted>
+            <View
+              style={[
+                styles.blindBanner,
+                { backgroundColor: colors.warningBg, borderColor: colors.warning },
+              ]}
+            >
+              <Ionicons name="eye-off-outline" size={18} color={colors.warning} />
+              <Text style={{ flex: 1, color: colors.warning, fontWeight: '600', fontSize: 12 }}>
+                Blind count — system balance is hidden so you count what is on the shelf.
+              </Text>
+            </View>
           )}
 
           <Input
-            label="Physical Quantity (Count) *"
+            label="Physical quantity *"
             value={qty}
             onChangeText={setQty}
             keyboardType="decimal-pad"
@@ -282,27 +336,31 @@ export default function CaptureCountScreen() {
             autoFocus
           />
 
-          <View style={styles.varianceBox}>
-            <Text style={styles.varLabel}>
-              Variance = Physical Count − Actual Balance
-            </Text>
-            <Text style={[styles.varValue, { color: varianceColor(variance) }]}>
-              {variance > 0 ? '+' : ''}
-              {formatQty(variance)}
-              {rate ? `  ·  value ${formatQty(variance * rate, 2)}` : ''}
-            </Text>
-          </View>
-
-          {reasonNeeded ? (
-            <View style={styles.reasonNotice}>
-              <Ionicons name="alert-circle" size={18} color={colors.warning} />
-              <Text style={styles.reasonNoticeText}>
-                Reason is mandatory when variance is not equal to 0.
+          {showVariance ? (
+            <View style={[styles.varianceBox, { backgroundColor: colors.infoBg }]}>
+              <Text style={[styles.varLabel, { color: colors.textSecondary }]}>
+                Variance = Physical − System
+              </Text>
+              <Text style={[styles.varValue, { color: varianceColor(variance) }]}>
+                {variance > 0 ? '+' : ''}
+                {formatQty(variance)}
+                {rate ? `  ·  ${formatQty(variance * rate, 2)}` : ''}
               </Text>
             </View>
           ) : null}
 
-          <Text style={styles.label}>Reason for Variance{reasonNeeded ? ' *' : ''}</Text>
+          {reasonNeeded ? (
+            <View style={[styles.reasonNotice, { backgroundColor: colors.warningBg }]}>
+              <Ionicons name="alert-circle" size={18} color={colors.warning} />
+              <Text style={{ flex: 1, color: colors.warning, fontWeight: '600', fontSize: 12 }}>
+                Pick a reason — variance is not zero.
+              </Text>
+            </View>
+          ) : null}
+
+          <Text style={[styles.label, { color: colors.textSecondary }]}>
+            Reason for variance{reasonNeeded ? ' *' : ''}
+          </Text>
           <View style={styles.reasonList}>
             {reasons.map((r) => {
               const selected = reason === r.name || reason === r.reason_code;
@@ -310,9 +368,21 @@ export default function CaptureCountScreen() {
                 <Pressable
                   key={r.name}
                   onPress={() => setReason(r.name)}
-                  style={[styles.reasonChip, selected && styles.reasonChipOn]}
+                  style={[
+                    styles.reasonChip,
+                    {
+                      backgroundColor: selected ? colors.primary : colors.surfaceMuted,
+                      borderColor: selected ? colors.primary : colors.border,
+                    },
+                  ]}
                 >
-                  <Text style={[styles.reasonText, selected && styles.reasonTextOn]}>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '700',
+                      color: selected ? colors.white : colors.textSecondary,
+                    }}
+                  >
                     {r.reason_name}
                   </Text>
                 </Pressable>
@@ -324,24 +394,31 @@ export default function CaptureCountScreen() {
             label="Notes (optional)"
             value={notes}
             onChangeText={setNotes}
-            placeholder="Additional details…"
+            placeholder="Extra detail…"
             multiline
           />
 
           <View style={{ gap: 10, marginTop: spacing.sm }}>
-            <Button title="Save Count" onPress={save} loading={saving} icon="save-outline" />
             <Button
-              title="Scan Next"
+              title="Save & back to list"
+              onPress={() => save('session')}
+              loading={saving}
+              icon="save-outline"
+            />
+            <Button
+              title="Save & scan next"
               variant="secondary"
-              onPress={async () => {
-                if (itemCode && qty !== '') {
-                  await save();
-                }
-                router.replace(`/(app)/session/${encodeURIComponent(sessionName)}/scan`);
-              }}
+              onPress={() => save('scan')}
+              loading={saving}
               icon="barcode-outline"
             />
-            <Button title="Cancel" variant="ghost" onPress={() => router.back()} />
+            <Button
+              title="Cancel"
+              variant="ghost"
+              onPress={() =>
+                router.replace(`/(app)/session/${encodeURIComponent(sessionName)}`)
+              }
+            />
           </View>
         </Card>
       </ScrollView>
@@ -350,64 +427,57 @@ export default function CaptureCountScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1 },
   itemHeader: { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  image: { width: 64, height: 64, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
+  image: { width: 64, height: 64, borderRadius: radius.md },
   imagePh: {
     width: 64,
     height: 64,
     borderRadius: radius.md,
-    backgroundColor: colors.infoBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  itemCode: { fontWeight: '800', fontSize: 16, color: colors.text },
-  itemName: { fontWeight: '600', color: colors.text, marginTop: 2 },
+  itemCode: { fontWeight: '800', fontSize: 16 },
+  itemName: { fontWeight: '600', marginTop: 2 },
   balanceBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
   },
-  balanceValue: { fontSize: 28, fontWeight: '800', color: colors.text },
+  balanceValue: { fontSize: 28, fontWeight: '800' },
+  blindBanner: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+  },
   varianceBox: {
-    backgroundColor: colors.infoBg,
     borderRadius: radius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
   },
-  varLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  varLabel: { fontSize: 12, fontWeight: '600' },
   varValue: { fontSize: 24, fontWeight: '800', marginTop: 4 },
   reasonNotice: {
     flexDirection: 'row',
     gap: 8,
     alignItems: 'center',
-    backgroundColor: colors.warningBg,
     padding: spacing.sm,
     borderRadius: radius.sm,
     marginBottom: spacing.sm,
   },
-  reasonNoticeText: { flex: 1, color: colors.warning, fontWeight: '600', fontSize: 12 },
-  label: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
+  label: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
   reasonList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: spacing.md },
   reasonChip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: radius.full,
-    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: colors.border,
   },
-  reasonChipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  reasonText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
-  reasonTextOn: { color: colors.white },
 });

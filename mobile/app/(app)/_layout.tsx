@@ -4,18 +4,18 @@ import { Redirect, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppStore } from '@/store/appStore';
-import { colors } from '@/theme/colors';
+import { useTheme } from '@/theme/ThemeContext';
 
 export default function AppLayout() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const hydrated = useAppStore((s) => s.hydrated);
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
 
   if (hydrated && !isAuthenticated) {
     return <Redirect href="/(auth)/login" />;
   }
 
-  // Keep tabs clear of Android gesture/nav bar and iOS home indicator
   const bottomPad = Math.max(insets.bottom, Platform.OS === 'android' ? 10 : 8);
   const tabBarHeight = 52 + bottomPad;
 
@@ -36,18 +36,13 @@ export default function AppLayout() {
           backgroundColor: colors.surface,
           elevation: 8,
         },
-        tabBarItemStyle: {
-          paddingVertical: 2,
-        },
+        tabBarItemStyle: { paddingVertical: 2 },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',
           marginBottom: Platform.OS === 'android' ? 2 : 0,
         },
-        sceneStyle: {
-          // leave room so list footers aren't hidden under the tab bar
-          backgroundColor: colors.background,
-        },
+        sceneStyle: { backgroundColor: colors.background },
       }}
     >
       <Tabs.Screen
@@ -90,7 +85,10 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen name="session/[id]/index" options={{ href: null, title: 'Session' }} />
-      <Tabs.Screen name="session/[id]/scan" options={{ href: null, title: 'Scan', headerShown: false }} />
+      <Tabs.Screen
+        name="session/[id]/scan"
+        options={{ href: null, title: 'Scan', headerShown: false }}
+      />
       <Tabs.Screen name="session/[id]/count" options={{ href: null, title: 'Capture Count' }} />
       <Tabs.Screen name="session/[id]/submit" options={{ href: null, title: 'Submit' }} />
       <Tabs.Screen name="session/[id]/summary" options={{ href: null, title: 'Summary' }} />

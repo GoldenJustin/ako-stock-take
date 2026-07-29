@@ -83,6 +83,25 @@ Login with any ERPNext user that has stock-take rights. Server URL defaults to t
 
 ---
 
+## Repo visibility (ERPNext public, mobile private)
+
+GitHub does **not** support a public branch and a private branch in the same repo.
+Branches share the repo’s visibility.
+
+Practical options:
+
+1. **Two repos** (recommended)  
+   - `ako-stock-take` (public) – ERPNext app + install scripts only  
+   - `ako-stock-take-mobile` (private) – Expo app, clone with auth  
+
+2. **Keep one private monorepo** (current) – simplest for the team  
+
+3. **Public monorepo** – only if you are fine shipping the mobile source  
+
+We use option 2 day-to-day. If you want option 1 later, split `mobile/` out.
+
+---
+
 ## License
 
 MIT  

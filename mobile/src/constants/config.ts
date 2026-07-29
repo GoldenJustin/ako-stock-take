@@ -14,6 +14,8 @@ export const STORAGE_KEYS = {
   lastCompany: 'ako.lastCompany',
   rememberMe: 'ako.rememberMe',
   savedUsr: 'ako.savedUsr',
+  themeId: 'ako.themeId',
+  uiPrefs: 'ako.uiPrefs',
 } as const;
 
 export const APP_NAME = 'AKO Stock Take';
